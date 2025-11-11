@@ -58,9 +58,13 @@ uv run python demo.py
 ```
 
 This demonstrates:
+0. **🚀 Serial vs Concurrent Comparison** - Same 3 tools called both ways:
+   - Serial (task=False): 6.01s
+   - Concurrent (task=True): 3.05s
+   - **1.97x speedup!**
 1. **Direct await** - Call task and immediately wait for result
 2. **Concurrent tasks** - Launch multiple tasks simultaneously
-3. **Status polling** - Poll task status while it runs
+3. **Status polling** - Poll task status while it runs (with live state display)
 4. **Instant tools** - Compare with non-task tools
 
 ### Client-Server Demo
@@ -187,24 +191,67 @@ print(result.data)  # The actual return value from your tool
 - `failed` - Task encountered an error
 - `cancelled` - Task was cancelled
 
+## The Key Difference: Serial vs Concurrent
+
+### Serial Execution (task=False) - Traditional approach
+
+```python
+# Each tool call waits for completion before the next starts
+result1 = await client.call_tool("my_tool", {"duration": 3}, task=False)
+result2 = await client.call_tool("my_tool", {"duration": 2}, task=False)
+result3 = await client.call_tool("my_tool", {"duration": 1}, task=False)
+# Total time: 3 + 2 + 1 = 6 seconds
+```
+
+### Concurrent Execution (task=True) - With background tasks
+
+```python
+# All tools launch immediately and run in parallel
+task1 = await client.call_tool("my_tool", {"duration": 3}, task=True)
+task2 = await client.call_tool("my_tool", {"duration": 2}, task=True)
+task3 = await client.call_tool("my_tool", {"duration": 1}, task=True)
+
+# Wait for all to complete
+results = await asyncio.gather(task1, task2, task3)
+# Total time: max(3, 2, 1) = ~3 seconds
+```
+
+**Result: ~2x speedup!** This is the power of background tasks.
+
 ## Example Output
 
 When running `demo.py`, you'll see output like:
 
 ```
-Example 1: Call task and await immediately
-------------------------------------------------------------
-  [SERVER] Task 'quick-task' starting, will run for 2s
-  [SERVER] Task 'quick-task' completed after 2.01s
-[CLIENT] Task object created: ToolTask
-[CLIENT] Result: {'task_name': 'quick-task', 'message': "Task 'quick-task' finished successfully!"}
+COMPARISON: Serial (task=False) vs Concurrent (task=True)
+======================================================================
 
-Example 2: Launch multiple tasks concurrently
-------------------------------------------------------------
-[CLIENT] Starting 3 tasks simultaneously...
-  [SERVER] Task 'task-A' starting, will run for 3s
-  [SERVER] Task 'task-A' completed after 3.01s
-[CLIENT] Task 1 result: Task 'task-A' finished successfully!
+Part A: Serial execution (task=False) - Traditional approach
+----------------------------------------------------------------------
+[CLIENT] Calling 3 tools serially (waiting for each to complete)...
+  [SERVER] Task 'serial-A' starting, will run for 3s
+  [SERVER] Task 'serial-A' completed after 3.00s
+  [SERVER] Task 'serial-B' starting, will run for 2s
+  [SERVER] Task 'serial-B' completed after 2.00s
+  [SERVER] Task 'serial-C' starting, will run for 1s
+  [SERVER] Task 'serial-C' completed after 1.00s
+[CLIENT] ⏱️  Serial execution took: 6.01s
+         (Expected: 3+2+1 = 6 seconds)
+
+Part B: Concurrent execution (task=True) - Background tasks
+----------------------------------------------------------------------
+[CLIENT] Launching 3 tasks concurrently...
+  [SERVER] Task 'concurrent-A' starting, will run for 3s
+  [SERVER] Task 'concurrent-B' starting, will run for 2s
+  [SERVER] Task 'concurrent-C' starting, will run for 1s
+  [SERVER] Task 'concurrent-C' completed after 1.00s
+  [SERVER] Task 'concurrent-B' completed after 2.00s
+  [SERVER] Task 'concurrent-A' completed after 3.00s
+[CLIENT] ⏱️  Concurrent execution took: 3.05s
+         (Expected: max(3,2,1) = ~3 seconds)
+
+🚀 Speedup: 1.97x faster with background tasks!
+   Time saved: 2.96 seconds
 ```
 
 ## Learn More

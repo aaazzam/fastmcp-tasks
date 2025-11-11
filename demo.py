@@ -72,6 +72,71 @@ async def run_demo():
     async with client:
         print(f"\nConnected to server: {server.name}\n")
 
+        # Example 0: COMPARISON - Serial vs Concurrent Execution
+        print("=" * 70)
+        print("COMPARISON: Serial (task=False) vs Concurrent (task=True)")
+        print("=" * 70)
+
+        # Part A: Serial execution (traditional way)
+        print("\nPart A: Serial execution (task=False) - Traditional approach")
+        print("-" * 70)
+        serial_start = time.time()
+
+        print("[CLIENT] Calling 3 tools serially (waiting for each to complete)...")
+        result1 = await client.call_tool(
+            "long_running_task",
+            {"duration": 3, "task_name": "serial-A"},
+            task=False,  # NOT a task - blocks until complete
+        )
+        result2 = await client.call_tool(
+            "long_running_task",
+            {"duration": 2, "task_name": "serial-B"},
+            task=False,
+        )
+        result3 = await client.call_tool(
+            "long_running_task",
+            {"duration": 1, "task_name": "serial-C"},
+            task=False,
+        )
+
+        serial_elapsed = time.time() - serial_start
+        print(f"[CLIENT] ⏱️  Serial execution took: {serial_elapsed:.2f}s")
+        print(f"         (Expected: 3+2+1 = 6 seconds)\n")
+
+        # Part B: Concurrent execution (with tasks)
+        print("Part B: Concurrent execution (task=True) - Background tasks")
+        print("-" * 70)
+        concurrent_start = time.time()
+
+        print("[CLIENT] Launching 3 tasks concurrently...")
+        task1 = await client.call_tool(
+            "long_running_task",
+            {"duration": 3, "task_name": "concurrent-A"},
+            task=True,  # Returns immediately
+        )
+        task2 = await client.call_tool(
+            "long_running_task",
+            {"duration": 2, "task_name": "concurrent-B"},
+            task=True,
+        )
+        task3 = await client.call_tool(
+            "long_running_task",
+            {"duration": 1, "task_name": "concurrent-C"},
+            task=True,
+        )
+
+        print("[CLIENT] All tasks launched! Waiting for completion...")
+        results = await asyncio.gather(task1, task2, task3)
+
+        concurrent_elapsed = time.time() - concurrent_start
+        print(f"[CLIENT] ⏱️  Concurrent execution took: {concurrent_elapsed:.2f}s")
+        print(f"         (Expected: max(3,2,1) = ~3 seconds)")
+
+        # Show the speedup
+        speedup = serial_elapsed / concurrent_elapsed
+        print(f"\n🚀 Speedup: {speedup:.2f}x faster with background tasks!")
+        print(f"   Time saved: {serial_elapsed - concurrent_elapsed:.2f} seconds\n")
+
         # Example 1: Simple task with direct await
         print("Example 1: Call task and await immediately")
         print("-" * 60)
