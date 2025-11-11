@@ -196,6 +196,20 @@ This shows three usage patterns:
 2. **Pattern 2: Status Polling** - Monitor progress
 3. **Pattern 3: Manual Result Fetching** - Do work while task runs
 
+### Deep Research Demo (Real-World Use Case)
+
+This demo implements the SEP-1686 use case: **"Deep research tools that spawn multiple research agents... takes 10-30 minutes"**
+
+**Mock Version (No API Keys Required):**
+```bash
+uv run python deep_research_mock_client.py
+```
+
+Demonstrates all 4 key patterns:
+1. **Fire-and-forget**: Submit research, do other work while it runs (~23s)
+2. **Status monitoring**: Poll progress during execution
+3. **Multiple retrieval**: Get same result from different devices/sessions
+4. **Concurrent research**: Run 3 research tasks in parallel
 
 **Real Version (Requires API Keys):**
 ```bash

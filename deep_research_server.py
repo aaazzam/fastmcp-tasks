@@ -17,6 +17,7 @@ Based on: https://ai.pydantic.dev/examples/deep-research/
 
 import asyncio
 import os
+import warnings
 from typing import Annotated, Optional
 
 from annotated_types import MaxLen
@@ -29,6 +30,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env file FIRST
 load_dotenv()
+
+# Suppress pydantic_ai deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic_ai")
 
 
 # ============================================================================
@@ -147,88 +151,81 @@ async def extra_search(ctx: RunContext[AbstractAgent], query: str) -> str:
     return result.output
 
 
-async def run_deep_research(query: str) -> str:
+@mcp.tool(task=True)
+async def web_search(search_terms: str) -> str:
     """
-    Run the deep research pipeline with AI agents.
+    Perform a single web search using AI agent.
 
-    This is the core logic from the pydantic_ai example.
+    This is a background task - can take 10-60 seconds depending on search complexity.
+
+    Args:
+        search_terms: The search terms to look for
+
+    Returns:
+        str: Detailed report on search results
     """
-    # Step 1: Create research plan
+    result = await search_agent.run(search_terms)
+    return result.output
+
+
+# ============================================================================
+# FastMCP Tools - Composable Research Pipeline
+# ============================================================================
+#
+# This demonstrates task composition: exposing each step as a separate tool
+# so clients can orchestrate complex multi-agent workflows using MCP tasks.
+
+
+@mcp.tool()
+async def plan_research(query: str) -> dict:
+    """
+    Create a research plan for a query using Claude Sonnet.
+
+    Analyzes the query and designs search steps. Fast operation (~5-10 seconds).
+
+    Args:
+        query: The research question
+
+    Returns:
+        dict: Research plan with search_steps list and analysis_instructions
+    """
     result = await plan_agent.run(query)
     plan = result.output
 
-    # Step 2: Run searches in parallel
-    async with asyncio.TaskGroup() as tg:
-        tasks = [tg.create_task(search_agent.run(step.search_terms)) for step in plan.web_search_steps]
+    return {
+        "executive_summary": plan.executive_summary,
+        "search_steps": [step.search_terms for step in plan.web_search_steps],
+        "analysis_instructions": plan.analysis_instructions,
+    }
 
-    search_results = [task.result().output for task in tasks]
 
-    # Step 3: Analyze and synthesize
+@mcp.tool(task=True)
+async def analyze_research(query: str, search_results: list[str], instructions: str) -> str:
+    """
+    Analyze research results and generate final report using Claude Sonnet.
+
+    This is a background task that can take 1-5 minutes.
+
+    Args:
+        query: Original research query
+        search_results: Results from all searches
+        instructions: Analysis instructions from plan
+
+    Returns:
+        str: Final research report
+    """
     analysis_result = await analysis_agent.run(
         format_as_xml(
             {
                 "query": query,
                 "search_results": search_results,
-                "instructions": plan.analysis_instructions,
+                "instructions": instructions,
             }
         ),
         deps=search_agent,
     )
 
     return analysis_result.output
-
-
-# ============================================================================
-# FastMCP Tool
-# ============================================================================
-
-
-@mcp.tool(task=True)
-async def deep_research(query: str) -> dict:
-    """
-    Perform comprehensive deep research using AI agents.
-
-    This is a long-running operation (typically 10-30 minutes) that:
-    1. Analyzes your query and creates a research plan
-    2. Runs multiple web searches in parallel using AI agents
-    3. Synthesizes findings into a comprehensive report
-
-    Perfect demonstration of SEP-1686 background tasks:
-    - Takes significant time (minutes)
-    - Client can disconnect and reconnect
-    - Multiple clients can monitor progress via task_id
-    - Real-world use case from SEP-1686 proposal
-
-    IMPORTANT: Requires .env file with:
-    - ANTHROPIC_API_KEY for Claude Sonnet
-    - GOOGLE_VERTEX_PROJECT for Gemini via Vertex AI
-
-    Args:
-        query: The research question or topic to investigate
-
-    Returns:
-        dict with keys:
-            - query: Original query
-            - report: Comprehensive research report
-            - metadata: Additional execution information
-    """
-    print(f"\n[SERVER] Starting deep research for: '{query}'")
-    print("[SERVER] This will take several minutes...")
-    print("[SERVER] Using real AI agents (Claude Sonnet + Gemini)")
-
-    # Run the research pipeline
-    report = await run_deep_research(query)
-
-    print(f"[SERVER] Deep research completed!")
-
-    return {
-        "query": query,
-        "report": report,
-        "metadata": {
-            "agents_used": ["Claude Sonnet 4.5", "Gemini 2.5 Flash"],
-            "note": "This used real AI agents and web searches",
-        },
-    }
 
 
 if __name__ == "__main__":
