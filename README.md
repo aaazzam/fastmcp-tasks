@@ -8,17 +8,130 @@ This project demonstrates **true concurrent background task execution** in FastM
 - ✅ Status polling while tasks run in the background
 - ✅ Multiple usage patterns for task management
 
-## What Are Background Tasks?
+## Understanding SEP-1686: Why Background Tasks Matter
 
-Background tasks in FastMCP (SEP-1686) enable **true concurrent tool execution**. When you call a tool with `task=True`, it returns immediately with a future-like object while the tool executes in the background.
+### The Problem
 
-### Features
+Imagine you're building an MCP tool for molecular analysis in drug discovery. A single analysis takes **3 hours**. What happens if:
+- Your laptop goes to sleep at hour 2?
+- Your network connection drops?
+- You need to check the status from your phone?
+- Another team member needs to see if the analysis is done?
 
-- ✅ **Concurrent execution** - Multiple tasks run in parallel
-- ✅ **Non-blocking API** - Call returns immediately with task handle
-- ✅ **Status monitoring** - Poll task state while it runs
-- ✅ **Flexible result retrieval** - Await when ready or poll periodically
-- ✅ **In-memory task queue** - Uses Docket for background execution
+With traditional MCP tool calls, **the work is lost**. The client must stay connected for the entire duration, and only that client can access the result.
+
+### What Background Tasks Actually Solve
+
+**It's not about concurrency** - both `asyncio.gather` and `task=True` give you parallel execution (~3s in our demo).
+
+**It's about task lifecycle management:**
+
+#### 1. **Connection Independence**
+```python
+# Submit work and disconnect
+task = await client.call_tool("analyze_molecules", {...}, task=True)
+task_id = task.task_id  # Save this!
+
+# Close laptop, go home, reconnect tomorrow
+# Work continues on server
+
+# Check back later from any device
+status = await client.get_task_status(task_id)
+result = await client.get_task_result(task_id)
+```
+
+#### 2. **Crash Resilience**
+If your client crashes at hour 2 of a 3-hour analysis:
+- **With normal calls**: Work is lost, start over (3 more hours)
+- **With background tasks**: Work continues, just reconnect and retrieve result
+
+#### 3. **Multiple Result Retrieval**
+```python
+# Get result on your laptop
+result = await task.result()
+
+# Later, get the same result on your phone
+result = await client.get_task_result(task_id)  # Same result!
+
+# Share task_id with teammate
+# They can also retrieve the result
+```
+
+#### 4. **Multi-Client Coordination**
+```python
+# Team member A submits the analysis
+task = await client.call_tool("run_tests", {...}, task=True)
+# Shares task_id: "abc-123"
+
+# Team member B (maybe in a dashboard)
+status = await client.get_task_status("abc-123")
+# "Still running... 45% complete"
+
+# Team member C (mobile app)
+if await client.get_task_status("abc-123").status == "completed":
+    notify_slack("Tests passed!")
+```
+
+#### 5. **Server-Side Resource Management**
+The server can:
+- Queue tasks when resources are limited
+- Prioritize important work
+- Rate-limit per-user submissions
+- Manage connection pools centrally
+
+### Real-World Use Cases (from SEP-1686)
+
+**Healthcare & Life Sciences**: Molecular property analysis processing 100,000+ data points through multiple models. Takes hours. Cannot re-run if connection drops.
+
+**Enterprise Automation**: Code migrations across multiple repositories. Analyze dependencies, transform code, validate changes. Takes 20 minutes to 2 hours. Need to resume if laptop sleeps.
+
+**Test Infrastructure**: Comprehensive test suites with thousands of cases. Takes hours. Need to stream logs while tests run, see which tests failed without waiting for entire suite.
+
+**Deep Research**: Multi-agent research systems that spawn multiple research agents internally. Takes 10-30 minutes. Model can't "wait" in a single turn.
+
+**CI/CD Pipelines**: Build, test, deploy workflows. Takes 15-45 minutes. Multiple team members need visibility into build status.
+
+### When to Use What
+
+**Use `asyncio.gather` when:**
+- Operations complete quickly (&lt;30 seconds)
+- Client will definitely stay connected
+- Only one client needs the result
+- Simple fan-out/fan-in pattern
+
+```python
+# Perfect for asyncio.gather
+results = await asyncio.gather(
+    client.call_tool("quick_lookup", {...}),
+    client.call_tool("quick_search", {...}),
+    client.call_tool("quick_parse", {...}),
+)
+```
+
+**Use background tasks (`task=True`) when:**
+- Operations take minutes or hours
+- Client might disconnect (mobile, laptop sleep, network issues)
+- Multiple clients need task visibility
+- Need to retrieve results multiple times
+- Building dashboards showing task progress
+- Server needs to manage resources/rate limits
+
+```python
+# Perfect for background tasks
+task = await client.call_tool("run_comprehensive_tests", {...}, task=True)
+
+# Do other work, client can disconnect/reconnect
+# Check back later from anywhere
+result = await task.result()
+```
+
+### Key Insight
+
+> **Both `asyncio.gather` and `task=True` give you concurrency** (~3s vs ~3s in our demo).
+>
+> **The difference is task lifecycle management.** Tasks persist beyond the connection, survive client crashes, can be queried by multiple clients, and results can be retrieved multiple times.
+>
+> Think of tasks like **submitting a job to a queue**, not just making concurrent API calls.
 
 **Critical requirement:** You must enable experimental settings:
 ```python
@@ -58,14 +171,17 @@ uv run python demo.py
 ```
 
 This demonstrates:
-0. **🚀 Serial vs Concurrent Comparison** - Same 3 tools called both ways:
-   - Serial (task=False): 6.01s
-   - Concurrent (task=True): 3.05s
-   - **1.97x speedup!**
-1. **Direct await** - Call task and immediately wait for result
-2. **Concurrent tasks** - Launch multiple tasks simultaneously
-3. **Status polling** - Poll task status while it runs (with live state display)
-4. **Instant tools** - Compare with non-task tools
+0. **Three Approaches Comparison** - Same 3 tools called different ways:
+   - Sequential: 6.01s (one at a time)
+   - `asyncio.gather`: 3.00s (client-side concurrency)
+   - `task=True`: 3.05s (server-side background tasks)
+   - **Key finding:** Both concurrent approaches are ~2x faster than sequential
+   - **Unique value of tasks:** Status polling, fire-and-forget, observability
+1. **What tasks enable** - Polling status while working (impossible with gather)
+2. **Direct await** - Call task and immediately wait for result
+3. **Concurrent tasks** - Launch multiple tasks simultaneously
+4. **Status polling** - Monitor 3 tasks with real-time state transitions
+5. **Instant tools** - Compare with non-task tools
 
 ### Client-Server Demo
 
@@ -191,32 +307,74 @@ print(result.data)  # The actual return value from your tool
 - `failed` - Task encountered an error
 - `cancelled` - Task was cancelled
 
-## The Key Difference: Serial vs Concurrent
+## Three Ways to Call Multiple Tools
 
-### Serial Execution (task=False) - Traditional approach
+### Approach A: Sequential (6 seconds)
 
 ```python
-# Each tool call waits for completion before the next starts
+# Each call waits for the previous to complete
 result1 = await client.call_tool("my_tool", {"duration": 3}, task=False)
 result2 = await client.call_tool("my_tool", {"duration": 2}, task=False)
 result3 = await client.call_tool("my_tool", {"duration": 1}, task=False)
-# Total time: 3 + 2 + 1 = 6 seconds
+# Total: 3 + 2 + 1 = 6 seconds
 ```
 
-### Concurrent Execution (task=True) - With background tasks
+### Approach B: asyncio.gather (3 seconds) ✨
 
 ```python
-# All tools launch immediately and run in parallel
+# Client-side concurrency - all calls run in parallel!
+results = await asyncio.gather(
+    client.call_tool("my_tool", {"duration": 3}, task=False),
+    client.call_tool("my_tool", {"duration": 2}, task=False),
+    client.call_tool("my_tool", {"duration": 1}, task=False),
+)
+# Total: max(3, 2, 1) = ~3 seconds
+```
+
+### Approach C: Background Tasks (3 seconds) ✨
+
+```python
+# Server-side background tasks - same speed, more features
 task1 = await client.call_tool("my_tool", {"duration": 3}, task=True)
 task2 = await client.call_tool("my_tool", {"duration": 2}, task=True)
 task3 = await client.call_tool("my_tool", {"duration": 1}, task=True)
 
-# Wait for all to complete
 results = await asyncio.gather(task1, task2, task3)
-# Total time: max(3, 2, 1) = ~3 seconds
+# Total: max(3, 2, 1) = ~3 seconds
 ```
 
-**Result: ~2x speedup!** This is the power of background tasks.
+## When to Use Background Tasks (task=True)?
+
+**Key insight:** Both `asyncio.gather` and `task=True` give you concurrency with similar performance (~3s vs ~3s).
+
+**Use `task=True` when you need:**
+
+1. **Status polling** - Monitor task progress while it runs
+   ```python
+   task = await client.call_tool("long_task", {...}, task=True)
+   status = await task.status()  # Check if it's working, completed, etc.
+   ```
+
+2. **Fire-and-forget** - Submit now, check later
+   ```python
+   task = await client.call_tool("analysis", {...}, task=True)
+   # Do other work...
+   result = await task.result()  # Get result when ready
+   ```
+
+3. **Observability** - Do work between submission and retrieval
+   ```python
+   task = await client.call_tool("processing", {...}, task=True)
+   for i in range(10):
+       await asyncio.sleep(1)
+       status = await task.status()
+       print(f"Status: {status.status}")
+   ```
+
+**Use `asyncio.gather` when:**
+- You just need concurrent execution
+- You're waiting for all results immediately
+- You don't need to monitor progress
 
 ## Example Output
 

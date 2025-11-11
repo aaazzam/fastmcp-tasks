@@ -72,70 +72,121 @@ async def run_demo():
     async with client:
         print(f"\nConnected to server: {server.name}\n")
 
-        # Example 0: COMPARISON - Serial vs Concurrent Execution
+        # Example 0: COMPARISON - Three Different Approaches
         print("=" * 70)
-        print("COMPARISON: Serial (task=False) vs Concurrent (task=True)")
+        print("COMPARISON: Three Ways to Call Multiple Tools")
         print("=" * 70)
 
-        # Part A: Serial execution (traditional way)
-        print("\nPart A: Serial execution (task=False) - Traditional approach")
+        # Part A: Sequential (await each call one by one)
+        print("\nApproach A: Sequential calls (one at a time)")
         print("-" * 70)
-        serial_start = time.time()
+        sequential_start = time.time()
 
-        print("[CLIENT] Calling 3 tools serially (waiting for each to complete)...")
+        print("[CLIENT] Calling 3 tools sequentially...")
         result1 = await client.call_tool(
             "long_running_task",
-            {"duration": 3, "task_name": "serial-A"},
-            task=False,  # NOT a task - blocks until complete
+            {"duration": 3, "task_name": "sequential-A"},
+            task=False,
         )
         result2 = await client.call_tool(
             "long_running_task",
-            {"duration": 2, "task_name": "serial-B"},
+            {"duration": 2, "task_name": "sequential-B"},
             task=False,
         )
         result3 = await client.call_tool(
             "long_running_task",
-            {"duration": 1, "task_name": "serial-C"},
+            {"duration": 1, "task_name": "sequential-C"},
             task=False,
         )
 
-        serial_elapsed = time.time() - serial_start
-        print(f"[CLIENT] ⏱️  Serial execution took: {serial_elapsed:.2f}s")
-        print(f"         (Expected: 3+2+1 = 6 seconds)\n")
+        sequential_elapsed = time.time() - sequential_start
+        print(f"[CLIENT] ⏱️  Sequential took: {sequential_elapsed:.2f}s\n")
 
-        # Part B: Concurrent execution (with tasks)
-        print("Part B: Concurrent execution (task=True) - Background tasks")
+        # Part B: asyncio.gather with task=False
+        print("Approach B: asyncio.gather with task=False")
         print("-" * 70)
-        concurrent_start = time.time()
+        gather_start = time.time()
 
-        print("[CLIENT] Launching 3 tasks concurrently...")
+        print("[CLIENT] Using asyncio.gather on regular tool calls...")
+        results = await asyncio.gather(
+            client.call_tool("long_running_task", {"duration": 3, "task_name": "gather-A"}, task=False),
+            client.call_tool("long_running_task", {"duration": 2, "task_name": "gather-B"}, task=False),
+            client.call_tool("long_running_task", {"duration": 1, "task_name": "gather-C"}, task=False),
+        )
+
+        gather_elapsed = time.time() - gather_start
+        print(f"[CLIENT] ⏱️  asyncio.gather took: {gather_elapsed:.2f}s\n")
+
+        # Part C: Background tasks (task=True)
+        print("Approach C: Background tasks (task=True)")
+        print("-" * 70)
+        task_start = time.time()
+
+        print("[CLIENT] Launching background tasks...")
         task1 = await client.call_tool(
             "long_running_task",
-            {"duration": 3, "task_name": "concurrent-A"},
-            task=True,  # Returns immediately
+            {"duration": 3, "task_name": "background-A"},
+            task=True,
         )
         task2 = await client.call_tool(
             "long_running_task",
-            {"duration": 2, "task_name": "concurrent-B"},
+            {"duration": 2, "task_name": "background-B"},
             task=True,
         )
         task3 = await client.call_tool(
             "long_running_task",
-            {"duration": 1, "task_name": "concurrent-C"},
+            {"duration": 1, "task_name": "background-C"},
             task=True,
         )
 
-        print("[CLIENT] All tasks launched! Waiting for completion...")
+        print("[CLIENT] Tasks launched, waiting for completion...")
         results = await asyncio.gather(task1, task2, task3)
 
-        concurrent_elapsed = time.time() - concurrent_start
-        print(f"[CLIENT] ⏱️  Concurrent execution took: {concurrent_elapsed:.2f}s")
-        print(f"         (Expected: max(3,2,1) = ~3 seconds)")
+        task_elapsed = time.time() - task_start
+        print(f"[CLIENT] ⏱️  Background tasks took: {task_elapsed:.2f}s\n")
 
-        # Show the speedup
-        speedup = serial_elapsed / concurrent_elapsed
-        print(f"\n🚀 Speedup: {speedup:.2f}x faster with background tasks!")
-        print(f"   Time saved: {serial_elapsed - concurrent_elapsed:.2f} seconds\n")
+        # Summary
+        print("=" * 70)
+        print("SUMMARY")
+        print("=" * 70)
+        print(f"Sequential:        {sequential_elapsed:.2f}s (baseline)")
+        print(f"asyncio.gather:    {gather_elapsed:.2f}s ({sequential_elapsed/gather_elapsed:.2f}x faster)")
+        print(f"Background tasks:  {task_elapsed:.2f}s ({sequential_elapsed/task_elapsed:.2f}x faster)")
+        print()
+        print("💡 Key insight: asyncio.gather ALSO gives you concurrency!")
+        print("   Both approaches run tasks in parallel with similar performance.")
+        print()
+        print("   So when should you use task=True? When you need:")
+        print("   - Status polling while tasks run")
+        print("   - Fire-and-forget (submit now, check later)")
+        print("   - Ability to do other work before checking results")
+        print()
+
+        # Show what you CAN'T do with asyncio.gather
+        print("Example: What tasks=True enables (impossible with asyncio.gather)")
+        print("-" * 70)
+
+        # Submit tasks
+        long_task = await client.call_tool(
+            "long_running_task",
+            {"duration": 5, "task_name": "long-running"},
+            task=True,
+        )
+        print("[CLIENT] Submitted long task (5s), doing other work...")
+
+        # Do other work while it runs!
+        for i in range(3):
+            await asyncio.sleep(1)
+            status = await long_task.status()
+            print(f"  [{i+1}s] Task status: {status.status} (still working...)")
+
+        # Get result when ready
+        print("[CLIENT] Now waiting for final result...")
+        result = await long_task.result()
+        print(f"[CLIENT] Got result: {result.data['message']}")
+        print()
+        print("⚠️  You can't poll status like this with asyncio.gather!")
+        print()
 
         # Example 1: Simple task with direct await
         print("Example 1: Call task and await immediately")
