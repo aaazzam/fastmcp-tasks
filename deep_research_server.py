@@ -230,8 +230,4 @@ async def analyze_research(query: str, search_results: list[str], instructions: 
 
 if __name__ == "__main__":
     # Settings already validated when loaded from .env above
-    print("✓ Settings loaded from .env")
-    print(f"✓ Using Anthropic API (Claude Sonnet)")
-    print(f"✓ Using Gemini API (Gemini 2.5 Flash)")
-    print("\nStarting Deep Research Server...")
     mcp.run(transport="stdio")
