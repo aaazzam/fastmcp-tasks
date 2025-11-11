@@ -8,7 +8,11 @@ import asyncio
 import time
 from datetime import datetime
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, settings
+
+# Enable experimental task support
+settings.experimental.enable_docket = True
+settings.experimental.enable_tasks = True
 
 # Create the FastMCP server instance
 mcp = FastMCP(
@@ -18,7 +22,7 @@ mcp = FastMCP(
 
 
 @mcp.tool(task=True)
-def slow_calculation(n: int) -> dict:
+async def slow_calculation(n: int) -> dict:
     """
     Simulates a long-running calculation by sleeping for n seconds.
 
@@ -29,7 +33,7 @@ def slow_calculation(n: int) -> dict:
         A dictionary with the result and timing information
     """
     start_time = time.time()
-    time.sleep(n)
+    await asyncio.sleep(n)  # Non-blocking async sleep
     end_time = time.time()
 
     return {
@@ -62,7 +66,7 @@ async def fetch_data(source: str, delay: int = 3) -> dict:
 
 
 @mcp.tool(task=True)
-def process_batch(items: list[str], process_time_per_item: float = 0.5) -> dict:
+async def process_batch(items: list[str], process_time_per_item: float = 0.5) -> dict:
     """
     Simulates batch processing of items.
 
@@ -77,7 +81,7 @@ def process_batch(items: list[str], process_time_per_item: float = 0.5) -> dict:
     processed = []
 
     for item in items:
-        time.sleep(process_time_per_item)
+        await asyncio.sleep(process_time_per_item)  # Non-blocking async sleep
         processed.append(f"processed_{item}")
 
     end_time = time.time()

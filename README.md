@@ -1,15 +1,33 @@
 # FastMCP Background Tasks Demo (SEP-1686)
 
-This project demonstrates the background task functionality in FastMCP using the experimental `sep-1686` branch. It showcases how to create MCP servers with task-enabled tools and how clients can interact with long-running operations.
+This project demonstrates **true concurrent background task execution** in FastMCP using the experimental `sep-1686` branch. Watch multiple tasks run in parallel while you poll their status and retrieve results!
+
+**This demo shows:**
+- ✅ **Real concurrent execution** - 3 tasks (3s+2s+1s) complete in ~3s total
+- ✅ Task-enabled server tools running in parallel
+- ✅ Status polling while tasks run in the background
+- ✅ Multiple usage patterns for task management
 
 ## What Are Background Tasks?
 
-Background tasks in FastMCP (SEP-1686) allow MCP tools to execute asynchronously, returning a future-like object that can be awaited or polled. This enables:
+Background tasks in FastMCP (SEP-1686) enable **true concurrent tool execution**. When you call a tool with `task=True`, it returns immediately with a future-like object while the tool executes in the background.
 
-- Non-blocking execution of long-running operations
-- Status monitoring during task execution
-- Concurrent execution of multiple tasks
-- Better resource utilization in MCP applications
+### Features
+
+- ✅ **Concurrent execution** - Multiple tasks run in parallel
+- ✅ **Non-blocking API** - Call returns immediately with task handle
+- ✅ **Status monitoring** - Poll task state while it runs
+- ✅ **Flexible result retrieval** - Await when ready or poll periodically
+- ✅ **In-memory task queue** - Uses Docket for background execution
+
+**Critical requirement:** You must enable experimental settings:
+```python
+from fastmcp import settings
+settings.experimental.enable_docket = True
+settings.experimental.enable_tasks = True
+```
+
+Without these, tasks will execute synchronously.
 
 ## Project Structure
 
@@ -60,17 +78,29 @@ This shows three usage patterns:
 
 ## Server Implementation
 
+### Step 1: Enable Experimental Settings
+
+**Critical:** You must enable these settings before creating your server:
+
+```python
+from fastmcp import FastMCP, settings
+
+# Enable experimental task support
+settings.experimental.enable_docket = True
+settings.experimental.enable_tasks = True
+
+server = FastMCP(name="my-server")
+```
+
+### Step 2: Define Task-Enabled Tools
+
 Tools are marked as task-enabled using `@server.tool(task=True)`:
 
 ```python
-from fastmcp import FastMCP
-
-server = FastMCP(name="my-server")
-
 @server.tool(task=True)
-def long_running_task(duration: int) -> dict:
+async def long_running_task(duration: int) -> dict:
     """This tool can execute as a background task"""
-    time.sleep(duration)
+    await asyncio.sleep(duration)  # Use async operations
     return {"status": "completed"}
 ```
 
@@ -126,9 +156,12 @@ results = await asyncio.gather(task_a, task_b, task_c)
 
 ### Current Limitations (sep-1686 branch)
 
-- **In-memory only** - Tasks run in a single process
-- **FastMCP client only** - Can only invoke with the fastmcp client
-- **Experimental** - This is an experimental feature under development
+- **In-memory only** - Tasks run in a single process, not distributed across machines
+- **FastMCP client only** - Can only invoke with the fastmcp client at this time
+- **Experimental settings required** - Must explicitly enable `enable_docket` and `enable_tasks`
+- **Experimental feature** - Under active development, API may change
+
+Despite being in-memory/single-process, tasks **do execute concurrently** within that process using asyncio and the Docket task queue.
 
 ### API Details
 

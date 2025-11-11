@@ -1,22 +1,32 @@
 """
 Standalone demo of FastMCP background tasks (SEP-1686)
 
-This script creates both a server and client in one file,
-demonstrating the complete task lifecycle.
+This script demonstrates TRUE concurrent task execution using the sep-1686 branch.
+
+IMPORTANT: You must enable experimental settings for concurrent execution:
+    settings.experimental.enable_docket = True
+    settings.experimental.enable_tasks = True
+
+With these enabled, tasks run concurrently! Example 2 shows 3 tasks completing
+in ~3 seconds total (not 6s), proving concurrent execution works.
 """
 
 import asyncio
 import time
 from datetime import datetime
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client, FastMCP, settings
+
+# Enable experimental task support
+settings.experimental.enable_docket = True
+settings.experimental.enable_tasks = True
 
 # Create the server
 server = FastMCP(name="demo-server")
 
 
 @server.tool(task=True)
-def long_running_task(duration: int, task_name: str) -> dict:
+async def long_running_task(duration: int, task_name: str) -> dict:
     """
     A long-running task that sleeps for the specified duration.
 
@@ -30,7 +40,7 @@ def long_running_task(duration: int, task_name: str) -> dict:
     start = time.time()
     print(f"  [SERVER] Task '{task_name}' starting, will run for {duration}s")
 
-    time.sleep(duration)
+    await asyncio.sleep(duration)  # Non-blocking async sleep
 
     elapsed = time.time() - start
     print(f"  [SERVER] Task '{task_name}' completed after {elapsed:.2f}s")
@@ -77,7 +87,8 @@ async def run_demo():
         # Example 2: Multiple concurrent tasks
         print("Example 2: Launch multiple tasks concurrently")
         print("-" * 60)
-        print("[CLIENT] Starting 3 tasks simultaneously...")
+        start_time = time.time()
+        print(f"[CLIENT] Starting 3 tasks simultaneously at {datetime.now().strftime('%H:%M:%S')}...")
 
         task_a = await client.call_tool(
             "long_running_task",
@@ -100,29 +111,60 @@ async def run_demo():
         # Gather results (they'll complete in different order based on duration)
         results = await asyncio.gather(task_a, task_b, task_c)
 
+        elapsed = time.time() - start_time
+        print(f"[CLIENT] All tasks completed in {elapsed:.2f}s (3+2+1=6s if serial, ~3s if concurrent)")
+
         for i, result in enumerate(results, 1):
             print(f"[CLIENT] Task {i} result: {result.data['message']}")
 
-        # Example 3: Polling task status
-        print("\nExample 3: Poll task status while it runs")
+        # Example 3: Polling multiple task statuses concurrently
+        print("\nExample 3: Poll multiple task statuses while they run")
         print("-" * 60)
-        task_poll = await client.call_tool(
+        print("[CLIENT] Starting 3 tasks with different durations...")
+
+        # Start 3 tasks
+        poll_a = await client.call_tool(
             "long_running_task",
-            {"duration": 4, "task_name": "polled-task"},
+            {"duration": 5, "task_name": "poll-A"},
             task=True,
         )
-        print("[CLIENT] Task created, polling status...")
+        poll_b = await client.call_tool(
+            "long_running_task",
+            {"duration": 3, "task_name": "poll-B"},
+            task=True,
+        )
+        poll_c = await client.call_tool(
+            "long_running_task",
+            {"duration": 2, "task_name": "poll-C"},
+            task=True,
+        )
 
-        # Poll every second
-        for _ in range(5):
-            status = await task_poll.status()
-            print(f"[CLIENT]   Status: {status.status} at {datetime.now().strftime('%H:%M:%S')}")
-            if status.status in ["completed", "failed", "cancelled"]:
-                break
-            await asyncio.sleep(1)
+        print("[CLIENT] All tasks launched, polling their statuses...\n")
 
-        result_poll = await task_poll.result()
-        print(f"[CLIENT] Final result: {result_poll.data['message']}\n")
+        # Poll all tasks every 0.5 seconds and show their states
+        tasks_map = {"poll-A (5s)": poll_a, "poll-B (3s)": poll_b, "poll-C (2s)": poll_c}
+        completed_tasks = set()
+
+        while len(completed_tasks) < len(tasks_map):
+            states = []
+            for name, task in tasks_map.items():
+                if name not in completed_tasks:
+                    status = await task.status()
+                    state_str = f"{name}: {status.status}"
+                    states.append(state_str)
+
+                    if status.status in ["completed", "failed", "cancelled"]:
+                        completed_tasks.add(name)
+                        states[-1] += " ✓"
+                else:
+                    states.append(f"{name}: completed ✓")
+
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] " + " | ".join(states))
+
+            if len(completed_tasks) < len(tasks_map):
+                await asyncio.sleep(0.5)
+
+        print(f"\n[CLIENT] All tasks completed!\n")
 
         # Example 4: Compare with instant tool
         print("Example 4: Compare with non-task tool")
