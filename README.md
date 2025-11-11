@@ -144,9 +144,17 @@ Without these, tasks will execute synchronously.
 
 ## Project Structure
 
+**Basic Demos:**
+- `demo.py` - Standalone demo showing all task patterns
 - `server.py` - FastMCP server with task-enabled tools
 - `client.py` - Client demonstrating three different task usage patterns
-- `demo.py` - Standalone demo combining server and client
+
+**Deep Research Demos (SEP-1686 Use Case):**
+- `deep_research_mock_server.py` - Mock research server (no API keys required)
+- `deep_research_mock_client.py` - Client demonstrating 4 task patterns
+- `deep_research_server.py` - Real AI research with pydantic_ai (requires API keys)
+
+**Configuration:**
 - `pyproject.toml` - Project dependencies (fastmcp from sep-1686 branch)
 
 ## Installation
