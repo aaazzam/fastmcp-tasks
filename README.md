@@ -1,12 +1,12 @@
 # FastMCP Background Tasks Demo (SEP-1686)
 
-This project demonstrates **true concurrent background task execution** in FastMCP using the experimental `sep-1686` branch. Watch multiple tasks run in parallel while you poll their status and retrieve results!
+This project demonstrates **task lifecycle management** in FastMCP using the experimental `sep-1686` branch. Learn how background tasks enable long-running operations that survive client disconnects, can be monitored from multiple clients, and persist beyond the initial connection.
 
 **This demo shows:**
-- ✅ **Real concurrent execution** - 3 tasks (3s+2s+1s) complete in ~3s total
-- ✅ Task-enabled server tools running in parallel
-- ✅ Status polling while tasks run in the background
-- ✅ Multiple usage patterns for task management
+- ✅ **Concurrent execution** - Tasks run in parallel (3s+2s+1s = ~3s total)
+- ✅ **Status polling** - Monitor task progress in real-time
+- ✅ **Fire-and-forget patterns** - Submit work and check back later
+- ✅ **Comparison with asyncio.gather** - Understand when to use each approach
 
 ## Understanding SEP-1686: Why Background Tasks Matter
 
@@ -196,6 +196,34 @@ This shows three usage patterns:
 2. **Pattern 2: Status Polling** - Monitor progress
 3. **Pattern 3: Manual Result Fetching** - Do work while task runs
 
+
+**Real Version (Requires API Keys):**
+```bash
+# Install optional dependencies
+uv sync --extra deep-research
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env and add your API keys:
+#   ANTHROPIC_API_KEY=your-anthropic-key
+#   GOOGLE_VERTEX_PROJECT=your-gcp-project
+
+# Run with real AI agents (takes 10-30 minutes)
+python deep_research_server.py
+```
+
+Uses real pydantic_ai agents:
+- Claude Sonnet 4.5 for planning and analysis
+- Gemini 2.5 Flash for web searches
+- Demonstrates true long-running operations (minutes)
+
+**Why This Matters:**
+- Operations taking 10-30 minutes cannot use regular tool calls
+- Client must be able to disconnect/reconnect
+- Multiple team members need visibility into research status
+- Results must persist beyond the original connection
+- **This is impossible with `asyncio.gather`** - client must stay connected the entire time
+
 ## Server Implementation
 
 ### Step 1: Enable Experimental Settings
@@ -342,39 +370,6 @@ task3 = await client.call_tool("my_tool", {"duration": 1}, task=True)
 results = await asyncio.gather(task1, task2, task3)
 # Total: max(3, 2, 1) = ~3 seconds
 ```
-
-## When to Use Background Tasks (task=True)?
-
-**Key insight:** Both `asyncio.gather` and `task=True` give you concurrency with similar performance (~3s vs ~3s).
-
-**Use `task=True` when you need:**
-
-1. **Status polling** - Monitor task progress while it runs
-   ```python
-   task = await client.call_tool("long_task", {...}, task=True)
-   status = await task.status()  # Check if it's working, completed, etc.
-   ```
-
-2. **Fire-and-forget** - Submit now, check later
-   ```python
-   task = await client.call_tool("analysis", {...}, task=True)
-   # Do other work...
-   result = await task.result()  # Get result when ready
-   ```
-
-3. **Observability** - Do work between submission and retrieval
-   ```python
-   task = await client.call_tool("processing", {...}, task=True)
-   for i in range(10):
-       await asyncio.sleep(1)
-       status = await task.status()
-       print(f"Status: {status.status}")
-   ```
-
-**Use `asyncio.gather` when:**
-- You just need concurrent execution
-- You're waiting for all results immediately
-- You don't need to monitor progress
 
 ## Example Output
 

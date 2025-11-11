@@ -1,9 +1,18 @@
 [project]
 name = "fastmcp-tasks"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastMCP Background Tasks Demo (SEP-1686)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp @ git+https://github.com/jlowin/fastmcp.git@sep-1686"
+]
+
+[project.optional-dependencies]
+deep-research = [
+    "pydantic-ai>=0.0.50",
+    "pydantic-ai-slim[google-vertex]>=0.0.50",
+    "pydantic-settings>=2.0.0",
+    "logfire>=2.0.0",
+    "python-dotenv>=1.0.0",
 ]
