@@ -16,6 +16,7 @@ Based on: https://ai.pydantic.dev/examples/deep-research/
 """
 
 import asyncio
+import logging
 import os
 import warnings
 from typing import Annotated, Optional
@@ -30,6 +31,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env file FIRST
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger("deep-research-server")
 
 # Suppress pydantic_ai deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pydantic_ai")
@@ -147,7 +156,9 @@ If the search results do not contain enough information, you may perform further
 @analysis_agent.tool
 async def extra_search(ctx: RunContext[AbstractAgent], query: str) -> str:
     """Perform an extra search for the given query."""
+    logger.info(f"Analysis agent requesting extra search: '{query}'")
     result = await ctx.deps.run(query)
+    logger.info(f"Extra search completed: '{query}' ({len(result.output)} chars)")
     return result.output
 
 
@@ -164,7 +175,9 @@ async def web_search(search_terms: str) -> str:
     Returns:
         str: Detailed report on search results
     """
+    logger.info(f"Starting web search: '{search_terms}'")
     result = await search_agent.run(search_terms)
+    logger.info(f"Web search completed: '{search_terms}' ({len(result.output)} chars)")
     return result.output
 
 
@@ -189,8 +202,15 @@ async def plan_research(query: str) -> dict:
     Returns:
         dict: Research plan with search_steps list and analysis_instructions
     """
+    logger.info(f"Creating research plan for query: '{query}'")
     result = await plan_agent.run(query)
     plan = result.output
+
+    logger.info(f"Plan created: {len(plan.web_search_steps)} search steps")
+    logger.info(f"Executive summary: {plan.executive_summary[:100]}...")
+
+    for i, step in enumerate(plan.web_search_steps, 1):
+        logger.info(f"  Step {i}: {step.search_terms}")
 
     return {
         "executive_summary": plan.executive_summary,
@@ -214,6 +234,9 @@ async def analyze_research(query: str, search_results: list[str], instructions: 
     Returns:
         str: Final research report
     """
+    logger.info(f"Starting analysis for query: '{query}'")
+    logger.info(f"Analyzing {len(search_results)} search results")
+
     analysis_result = await analysis_agent.run(
         format_as_xml(
             {
@@ -225,6 +248,7 @@ async def analyze_research(query: str, search_results: list[str], instructions: 
         deps=search_agent,
     )
 
+    logger.info(f"Analysis completed ({len(analysis_result.output)} chars)")
     return analysis_result.output
 
 
